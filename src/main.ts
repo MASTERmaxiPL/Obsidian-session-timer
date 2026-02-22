@@ -1,99 +1,85 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import {Notice, Platform, Plugin} from 'obsidian';
+import {DEFAULT_SETTINGS, SessionTimerPluginSettings, SessionTimerSettingTab} from "./settings";
 
-// Remember to rename these classes and interfaces!
-
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class SessionTimerPlugin extends Plugin {
+	settings: SessionTimerPluginSettings;
+	timer: number | null = null;
+	totalElapsedSeconds: number = 0;
+	timerPaused: boolean = false;
+	statusBarItemEl: HTMLElement | null = null;
 
 	async onload() {
 		await this.loadSettings();
+		new Notice('Session Timer Plugin activated!');
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
+		if (!Platform.isMobile) {
+    		this.statusBarItemEl = this.addStatusBarItem();
+		}
+		else {
+			this.addRibbonIcon('clock', 'Session Time', () => {
+				const time = this.formatTime(this.totalElapsedSeconds);
+				new Notice(`Session Time: ${time}`);
+			});
+    	}
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
+		this.addSettingTab(new SessionTimerSettingTab(this.app, this));
 
-		// This adds a simple command that can be triggered anywhere
+		this.timer = Date.now();
+
+		this.registerInterval(window.setInterval(() => this.updateTimer(), 1000));
+
 		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+            id: 'toggle-timer-pause',
+            name: 'Toggle Timer Pause',
+			hotkeys: [
+				{
+					modifiers: ["Mod", "Shift"],
+					key: "P"
 				}
-				return false;
-			}
+			],
+            callback: () => {
+                this.settings.SessionPauseTimerSetting = !this.settings.SessionPauseTimerSetting;
+                this.saveSettings();
+                new Notice(this.settings.SessionPauseTimerSetting ? "Timer paused" : "Timer resumed");
+            }
+        });
+
+		this.addCommand({
+    		id: 'show-session-time',
+    		name: 'Show Session Time',
+    		callback: () => {
+        		const timeString = this.formatTime(this.totalElapsedSeconds);
+        		new Notice(`⏳ Session time: ${timeString}`, 3000);
+    		}
 		});
+	}
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+	updateTimer() {
+		if (this.settings.SessionPauseTimerSetting && !document.hasFocus()) {
+			return;
+		}
+		this.totalElapsedSeconds += 1;
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
+		const timeString = this.formatTime(this.totalElapsedSeconds);
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+		this.statusBarItemEl?.setText(`Session Time: ${timeString}`);
+	}
 
+	formatTime(totalSeconds: number): string {
+		const hours = Math.floor(totalSeconds / 3600);
+		const minutes = Math.floor((totalSeconds % 3600) / 60);
+		const seconds = totalSeconds % 60;
+		return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 	}
 
 	onunload() {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
-	}
-}
-
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
-
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
 	}
 }
